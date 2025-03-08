@@ -1,75 +1,85 @@
 import numpy as np
 import gymnasium as gym
 from src_agents import Agente
-from .politicas import epsilon_greedy_policy  # Asegúrate de tener esta política implementada
+from .politicas import epsilon_greedy_policy  # Usando la política epsilon-greedy
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+from typing import *
+
 
 class SARSA(Agente):
-    def __init__(self, env: gym.Env, epsilon: float = 0.9, alpha: float = 0.1, gamma: float = 1.0, 
-                 decay: bool = False, num_episodios: int = 5000):
+    def __init__(self, env: gym.Env, hiperparametros: Dict[str, Any]):
         """
         Inicializa el agente SARSA.
-        - env: Entorno de Gymnasium.
-        - epsilon: Tasa de exploración inicial.
-        - alpha: Tasa de aprendizaje.
-        - gamma: Factor de descuento.
-        - decay: Si True, epsilon decae con el tiempo.
-        - num_episodios: Número total de episodios a entrenar.
+
+        Parámetros:
+        - env: El entorno de Gymnasium.
+        - hiperparametros: Diccionario con parámetros como tasa de aprendizaje,
+            factor de descuento, tasa de exploración, etc.
         """
-        super().__init__(env, epsilon, gamma)  
-        self.alpha = alpha
-        self.decay = decay  
-        self.num_episodios = num_episodios
-        self.stats = 0.0
-        self.list_stats = []
-        self.episode_lengths = []  
+        # Pasamos los parámetros correctos desde hiperparametros a la clase base
+        super().__init__(env, 
+                         epsilon=hiperparametros.get("exploration_rate", 0.4),
+                         gamma=hiperparametros.get("discount_rate", 0.99),
+                         learning_rate=hiperparametros.get("learning_rate", 0.1),
+                         exploration_decay_rate=hiperparametros.get("exploration_decay_rate", 0.001),
+                         min_epsilon=hiperparametros.get("min_exploration_rate", 0.01),
+                         seed=hiperparametros.get("seed", 42))  # Asegurarse de pasar la semilla
 
     def seleccionar_accion(self, estado):
         """
-        Selecciona una acción utilizando la política epsilon-greedy.
+        Implementa la política epsilon-greedy para SARSA:
+        - Con probabilidad epsilon, se elige una acción aleatoria (exploración).
+        - Con probabilidad 1 - epsilon, se elige la acción con el valor máximo Q (explotación).
         """
         return epsilon_greedy_policy(self.Q, self.epsilon, estado, self.env.action_space.n)
-
-    def entrenar(self):
+    
+    def entrenar(self, num_episodios: int):
         """
         Entrena al agente utilizando el algoritmo SARSA.
+
+        Devuelve:
+        - self.Q: La Q-table entrenada.
+        - self.list_stats: Las estadísticas de recompensa acumulada por episodio.
+        - self.episode_lengths: Las longitudes de los episodios.
         """
-        for episodio in tqdm(range(self.num_episodios), desc="Entrenando", unit="episodio", ncols=100):
-            state, info = self.env.reset(seed=1234)
-            action = self.seleccionar_accion(state)
+        self.stats = 0.0  # Inicializar estadísticas
+        self.list_stats = []  # Lista para almacenar estadísticas de cada episodio
+        self.episode_lengths = []  # Lista para almacenar las longitudes de cada episodio
+        
+        for episodio in tqdm(range(num_episodios), desc="Entrenando", unit="episodio", ncols=100):
+            estado, info = self.env.reset()
             done = False
-            episode_length = 0  
-            total_reward = 0  
+            episode_length = 0  # Inicializar la longitud del episodio
 
+            # Seleccionar la acción inicial usando la política epsilon-greedy
+            accion = self.seleccionar_accion(estado)
+            
             while not done:
-                new_state, reward, terminated, truncated, info = self.env.step(action)
-                new_action = self.seleccionar_accion(new_state)
-
-                # Actualización de la función de acción-valor Q(s, a)
-                self.Q[state, action] += self.alpha * (reward + self.gamma * self.Q[new_state, new_action] - self.Q[state, action])
+                # Interactuar con el entorno y obtener la siguiente transición
+                siguiente_estado, recompensa, terminado, truncado, _ = self.env.step(accion)
                 
-                # Actualizar estado y acción
-                state = new_state
-                action = new_action
-                done = terminated or truncated
-                episode_length += 1  
-                total_reward += reward  
+                # Seleccionar la próxima acción usando la política epsilon-greedy
+                siguiente_accion = self.seleccionar_accion(siguiente_estado)
 
-                # Decaimiento de epsilon si está activado
-                if self.decay:
-                    self.epsilon = max(0.01, self.epsilon * 0.995)
+                # Actualizar la Q-table con la recompensa y el siguiente estado
+                self.actualizar_Q(estado, accion, recompensa, siguiente_estado)
+                
+                # Actualizar el estado y la acción
+                estado = siguiente_estado
+                accion = siguiente_accion
+                done = terminado or truncado
+                episode_length += 1  # Contabilizar la longitud del episodio
 
-            # Registrar estadísticas
+            # Almacenar la longitud del episodio
             self.episode_lengths.append(episode_length)
-            self.list_stats.append(total_reward)
 
-            # Imprimir estado del entrenamiento en los episodios clave
-            if episodio in [2500, 3000, 3500, 4000, 4500]:
-                exito_promedio = np.mean(self.list_stats)
-                print(f"\nEpisodio {episodio}, éxito promedio: {exito_promedio:.2f}, epsilon: {self.epsilon:.2f}")
+            # Actualizar las estadísticas
+            self.stats += recompensa
+            self.list_stats.append(self.stats / (episodio + 1))
+            
+            # Decrecer epsilon al final de cada episodio
+            self.decay_exploration()
 
-        # Mostrar la tabla Q final después del entrenamiento
-        print("\nValor Q final con SARSA:")
-        print(self.Q)
-
+        # Devolver la Q-table entrenada, estadísticas y longitudes de episodios
         return self.Q, self.list_stats, self.episode_lengths

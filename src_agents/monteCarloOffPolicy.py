@@ -1,96 +1,131 @@
 import numpy as np
+from tqdm import tqdm
 import gymnasium as gym
 from src_agents import Agente
-from .politicas import epsilon_greedy_policy, random_epsilon_greedy_policy
-from tqdm import tqdm
+from .politicas import epsilon_greedy_policy
 
 class MonteCarloOffPolicy(Agente):
-    def __init__(self, env: gym.Env, epsilon: float = 0.9, gamma: float = 1.0, 
-                 decay: bool = True, min_epsilon: float = 0.05, epsilon_decay_rate: float = 0.999, 
+    def __init__(self, 
+                 env: gym.Env, 
+                 epsilon: float = 0.8, 
+                 gamma: float = 1.0, 
+                 decay: bool = False, 
                  num_episodios: int = 5000):
         """
-        Inicializa el agente Monte Carlo Off-Policy.
-        - env: Entorno de Gymnasium.
-        - epsilon: Tasa inicial de exploración.
-        - gamma: Factor de descuento.
-        - decay: Si True, epsilon decae con el tiempo.
-        - min_epsilon: Límite mínimo para epsilon.
-        - epsilon_decay_rate: Factor de reducción de epsilon por episodio.
-        - num_episodios: Número de episodios a entrenar.
+        Constructor del agente Monte Carlo Off-Policy con epsilon greedy.
+        
+        Args:
+            env: Entorno de Gymnasium.
+            epsilon: Parámetro de exploración inicial para la política de comportamiento (b).
+            gamma: Factor de descuento.
+            decay: Si True, se decae epsilon a lo largo de los episodios.
+            num_episodios: Número total de episodios de entrenamiento.
         """
-        super().__init__(env, epsilon, gamma)  
-        self.decay = decay  
-        self.min_epsilon = min_epsilon
-        self.epsilon_decay_rate = epsilon_decay_rate
+        super().__init__(env, epsilon, gamma)  # Llamada al constructor de la clase base Agente
+        self.decay = decay
         self.num_episodios = num_episodios
         
-        self.Q = np.zeros((env.observation_space.n, env.action_space.n))
-        self.C = np.zeros((env.observation_space.n, env.action_space.n))  # Acumulador de pesos
-        self.stats = []
+        # Para contar visitas (usado en alpha = 1 / n_visits)
+        self.n_visits = np.zeros([env.observation_space.n, env.action_space.n])
+        
+        # Variables para estadísticas
+        self.stats = 0.0
+        self.list_stats = [self.stats]
         self.episode_lengths = []
-        self.successes = []
 
     def seleccionar_accion(self, estado):
-        """Selecciona una acción utilizando la política epsilon-greedy."""
+        """
+        Selecciona una acción usando la política de comportamiento (b),
+        que aquí es epsilon-greedy con respecto a la Q actual.
+        """
         return epsilon_greedy_policy(self.Q, self.epsilon, estado, self.env.action_space.n)
+
+    def target_policy(self, state):
+        """
+        Define la política objetivo (π).
+        En este ejemplo, es determinista (greedy con respecto a Q).
+        """
+        return np.argmax(self.Q[state])
+
+    def behavior_policy_prob(self, state, action):
+        """
+        Probabilidad de tomar 'action' en 'state' bajo la política de comportamiento (b),
+        asumiendo que b es epsilon-greedy respecto a Q.
+        """
+        nA = self.env.action_space.n
+        probs = np.ones(nA, dtype=float) * (self.epsilon / nA)
+        best_action = np.argmax(self.Q[state])
+        probs[best_action] += (1.0 - self.epsilon)
+        return probs[action]
+
+    def target_policy_prob(self, state, action):
+        """
+        Probabilidad de tomar 'action' en 'state' bajo la política objetivo (π).
+        Como π es determinista (greedy con respecto a Q), la acción óptima tiene
+        probabilidad 1, y el resto 0.
+        """
+        best_action = self.target_policy(state)
+        return 1.0 if action == best_action else 0.0
 
     def entrenar(self):
         """
-        Entrena al agente utilizando el algoritmo Monte Carlo Off-Policy con 
-        importancia ponderada.
+        Entrena al agente mediante el algoritmo Monte Carlo Off-Policy
+        usando Weighted Importance Sampling.
         """
-        for episodio in tqdm(range(self.num_episodios), desc="Entrenando", unit="episodio", ncols=100):
-            state, _ = self.env.reset()
-            episodio_experiencia = []  
+        step_display = max(1, self.num_episodios // 10)
+        
+        for t in tqdm(range(self.num_episodios), desc="Entrenando Off-Policy (WIS)", unit="episodio", ncols=100):
+            # Reiniciar el entorno
+            state, info = self.env.reset(seed=1234)
             done = False
-            step_count = 0  
-            total_reward = 0  
-
-            # **Generación del episodio siguiendo la política de comportamiento (b)**
+            episode = []
+            episode_length = 0
+            
+            # Generar el episodio con la política de comportamiento (b)
             while not done:
+                if self.decay:
+                    # Reducir epsilon de forma gradual (ejemplo)
+                    self.epsilon = min(1.0, 1000.0 / (t + 1))
+
                 action = self.seleccionar_accion(state)
-                next_state, reward, terminated, truncated, _ = self.env.step(action)
-                done = terminated or truncated
-
-                # Guardar la transición del episodio
-                episodio_experiencia.append((state, action, reward))
+                next_state, reward, terminated, truncated, info = self.env.step(action)
+                
+                episode.append((state, action, reward))
                 state = next_state
-                step_count += 1
-                total_reward += reward  
+                done = terminated or truncated
+                episode_length += 1
 
-            # **Actualización Off-Policy de Q-values usando importancia ponderada**
-            G = 0.0  
-            W = 1.0  
+            self.episode_lengths.append(episode_length)
 
-            for (state_t, action_t, reward_t) in reversed(episodio_experiencia):
-                G = self.gamma * G + reward_t
-                self.C[state_t, action_t] += W  
-                self.Q[state_t, action_t] += (W / self.C[state_t, action_t]) * (G - self.Q[state_t, action_t])
+            # Retropropagación para calcular el retorno y actualizar Q con Weighted IS
+            G = 0.0
+            W = 1.0  # Factor de ponderación de importancia
+
+            for (s, a, r) in reversed(episode):
+                # Calcular el retorno acumulado
+                G = r + self.gamma * G
                 
-                # Si la acción tomada no es la acción óptima según la política target, detenemos la actualización
-                if action_t != np.argmax(self.Q[state_t]):
+                # Contar la visita (para promedio incremental)
+                self.n_visits[s, a] += 1.0
+                alpha = 1.0 / self.n_visits[s, a]
+                
+                # Actualización de Q con Weighted Importance Sampling
+                self.Q[s, a] += alpha * W * (G - self.Q[s, a])
+
+                # Si la política objetivo NO habría tomado esa acción (prob = 0), cortamos
+                if self.target_policy_prob(s, a) == 0.0:
                     break
-                
-                # Actualización del peso de importancia
-                behavior_prob = random_epsilon_greedy_policy(self.Q, self.epsilon, state_t, self.env.action_space.n)[action_t]
-                W /= behavior_prob  
 
-            # **Decay de epsilon**
-            if self.decay:
-                self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay_rate)
+                # Actualizar el factor de importancia
+                # W = W * (π(a|s) / b(a|s))
+                W *= (self.target_policy_prob(s, a) / self.behavior_policy_prob(s, a))
 
-            # **Registro de estadísticas**
-            self.episode_lengths.append(step_count)
-            self.stats.append(total_reward)
-            self.successes.append(1 if total_reward > 0 else 0)
+            # Actualizar estadísticas
+            self.stats += G
+            self.list_stats.append(self.stats / (t + 1))
+            
+            # Mostrar estadísticas de progreso
+            if t % step_display == 0 and t != 0:
+                print(f"Episodio {t}, recompensa promedio: {self.list_stats[-1]:.2f}, epsilon: {self.epsilon:.2f}")
 
-            # **Mostrar estadísticas en episodios clave**
-            if episodio in [2500, 3000, 3500, 4000, 4500]:
-                exito_promedio = np.mean(self.successes)
-                print(f"\nEpisodio {episodio}, éxito promedio: {exito_promedio:.2f}, epsilon: {self.epsilon:.2f}")
-
-        # **Mostrar la tabla Q final**
-        print("\nValor Q final con MonteCarloOffPolicy:")
-        print(self.Q)
-
-        return self.Q, self.stats, self.episode_lengths
+        return self.Q, self.list_stats, self.episode_lengths

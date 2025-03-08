@@ -205,7 +205,13 @@ def plot_all_three(list_stats, episode_lengths, Q, env, actions, window=50):
     window : int
         Tamaño de la ventana para calcular la media móvil de la longitud de episodios.
     """
+    # Si el entorno tiene el atributo 'env', usamos ese
+    if hasattr(env, 'env'):
+        env_inner = env.env
+    else:
+        env_inner = env
 
+    # Crear la figura con 3 subplots en una sola fila
     # Crear la figura con 3 subplots en una sola fila
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
 

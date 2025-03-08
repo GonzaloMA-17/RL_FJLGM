@@ -9,7 +9,7 @@ from .qLearning import QLearning
 from .sssemigradienteprueba import SarsaSemigradiente
 
 from .politicas import epsilon_greedy_policy, pi_star_from_Q
-from .plotting import plot, plot_comparison,plot_episode_lengths, plot_all_three, plot_episode_lengths_comparison
+from ..src_plotting.plotting import plot, plot_comparison,plot_episode_lengths, plot_all_three, plot_episode_lengths_comparison
 
 __all__ = ['Agente',
            'MonteCarloOnPolicy', 

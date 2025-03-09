@@ -366,7 +366,7 @@ def plot_all_three(list_stats, episode_lengths, Q, env, actions, window=50):
 
     ax3.set_xticks([])
     ax3.set_yticks([])
-    ax3.set_title("Política Aprendida (Monte Carlo On-Policy)", pad=10)
+    ax3.set_title("Política Aprendida", pad=10)
 
     # ────────────────────────────────────────────────────────────
     # Leyenda de flechas y colores

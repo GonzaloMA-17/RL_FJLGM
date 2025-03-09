@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def plot(list_stats):
@@ -24,7 +26,15 @@ def plot(list_stats):
     plt.legend()
     plt.show()
 
-def plot_episode_lengths(episode_lengths, window=50):
+import matplotlib.pyplot as plt
+import numpy as np
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_episode_lengths(episode_lengths, window=50, ax=None,
+                         label_episode="Longitud de episodio",
+                         label_trend="Tendencia (Media Móvil)"):
     """
     Grafica la longitud de los episodios a lo largo del entrenamiento.
 
@@ -34,23 +44,80 @@ def plot_episode_lengths(episode_lengths, window=50):
         Lista con las longitudes de cada episodio.
     window : int, opcional (por defecto 50)
         Tamaño de la ventana para calcular la media móvil.
+    ax : matplotlib.axes.Axes, opcional
+        Eje donde se dibujará el gráfico. Si es None, se crea una figura nueva.
+    label_episode : str, opcional
+        Etiqueta para la curva principal (longitud de episodio).
+    label_trend : str, opcional
+        Etiqueta para la curva de la media móvil (tendencia).
     """
-    indices = list(range(len(episode_lengths)))
+    # Si no se especifica un eje, creamos uno nuevo
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 3))
 
-    plt.figure(figsize=(6, 3))
-    plt.plot(indices, episode_lengths, label="Longitud de episodio", alpha=0.6)
+    indices = list(range(len(episode_lengths)))
+    ax.plot(indices, episode_lengths, label=label_episode, alpha=0.6)
 
     # Media móvil para suavizar la curva
     if len(episode_lengths) >= window:
         moving_avg = np.convolve(episode_lengths, np.ones(window) / window, mode="valid")
-        plt.plot(range(window - 1, len(episode_lengths)), moving_avg, label="Tendencia (Media Móvil)", color='red')
+        ax.plot(range(window - 1, len(episode_lengths)), moving_avg, 
+                label=label_trend, color='red')
 
-    plt.title("Longitud de los episodios")
-    plt.xlabel("Episodio")
-    plt.ylabel("Longitud")
-    plt.grid(True)
-    plt.legend()
+    ax.set_title("Longitud de los episodios")
+    ax.set_xlabel("Episodio")
+    ax.set_ylabel("Longitud")
+    ax.grid(True)
+    ax.legend()
+
+    # Si no hay eje externo, mostramos la figura directamente
+    if ax is None:
+        plt.show()
+
+
+def plot_multiple_episode_lengths(list_of_episode_lengths, window=50, labels=None):
+    """
+    Crea una grilla con dos columnas para graficar cada una de las listas de longitudes de episodios,
+    y permite especificar etiquetas personalizadas para cada gráfico.
+    
+    Parámetros:
+    -----------
+    list_of_episode_lengths : list of lists
+        Lista que contiene las listas de longitudes de episodios a graficar.
+    window : int, opcional (por defecto 50)
+        Tamaño de la ventana para calcular la media móvil.
+    labels : list of str, opcional
+        Lista de etiquetas para la leyenda de cada gráfico.
+    """
+    num_plots = len(list_of_episode_lengths)
+    nrows = (num_plots + 1) // 2  # Calcula el número de filas necesarias para 2 columnas
+    fig, axes = plt.subplots(nrows, 2, figsize=(12, nrows * 3))
+    
+    # Asegurarse de tener un arreglo 1D de ejes (en caso de que sea solo una fila)
+    if nrows == 1:
+        axes = np.array(axes)
+    else:
+        axes = axes.flatten()
+    
+    # Graficar cada lista en su eje correspondiente, usando las etiquetas si se proporcionan
+    for i, data in enumerate(list_of_episode_lengths):
+        if labels is not None and i < len(labels):
+            label = labels[i]
+        else:
+            label = "Datos " + str(i + 1)
+        
+        # Aquí se pasa la etiqueta a 'plot_episode_lengths'
+        plot_episode_lengths(data, window=window, ax=axes[i],
+                             label_episode=label,
+                             label_trend=label + " Media móvil")
+    
+    # Eliminar ejes sobrantes en caso de que el número de gráficos sea impar
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+    
+    plt.tight_layout()
     plt.show()
+
 
 def plot_policy_arrows_no_grid(Q, env):
     """
@@ -148,7 +215,6 @@ def plot_policy_arrows_no_grid(Q, env):
     ax.set_title("Política Aprendida (Monte Carlo On-Policy)", pad=10)
     plt.show()
 
-
 def plot_comparison(stats_list, labels, title="Comparación de Resultados de Entrenamiento"):
     """
     Compara la evolución de las recompensas de diferentes algoritmos.
@@ -177,8 +243,6 @@ def plot_comparison(stats_list, labels, title="Comparación de Resultados de Ent
     plt.grid(True, linestyle="--", alpha=0.7)
     plt.tight_layout()
     plt.show()
-
-
 
 def plot_all_three(list_stats, episode_lengths, Q, env, actions, window=50):
     """
@@ -343,7 +407,6 @@ def plot_all_three(list_stats, episode_lengths, Q, env, actions, window=50):
     plt.tight_layout()
     plt.show()
 
-
 def plot_episode_lengths_comparison(episode_lengths_list, labels, window=50):
     """
     Compara las longitudes de los episodios de diferentes agentes o algoritmos en una sola figura.
@@ -377,5 +440,123 @@ def plot_episode_lengths_comparison(episode_lengths_list, labels, window=50):
     plt.ylabel("Longitud")
     plt.grid(True)
     plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+def get_moving_avgs(arr, window, mode="valid"):
+    """
+    Calcula la media móvil de un arreglo.
+
+    Parámetros:
+    -----------
+    arr : array-like
+        Arreglo de datos.
+    window : int
+        Tamaño de la ventana para la media móvil.
+    mode : str, opcional
+        Modo de convolución (por defecto "valid").
+
+    Devuelve:
+    ---------
+    np.ndarray con la media móvil.
+    """
+    return np.convolve(np.array(arr).flatten(), np.ones(window), mode=mode) / window
+
+def plot_all(rewards, lengths, training_errors, rolling_length=500):
+    """
+    Grafica dos subplots:
+      1) Promedio móvil de las recompensas por episodio.
+      2) Promedio móvil de la longitud de los episodios.
+    
+    Esta función combina la funcionalidad de las clases GraphVisualizer 
+    que tenías en sarsasemigradiente.py y deppql.py.
+
+    Parámetros:
+    -----------
+    rewards : list
+        Lista de recompensas por episodio.
+    lengths : list
+        Lista de longitudes por episodio.
+    training_errors : list
+        Lista de errores de entrenamiento (no se usa en este gráfico, 
+        pero se incluye para mantener la firma similar).
+    rolling_length : int, opcional
+        Tamaño de la ventana para la media móvil (por defecto 500).
+    """
+    fig, axs = plt.subplots(ncols=2, figsize=(12, 5))
+    
+    # Gráfico de recompensas
+    axs[0].set_title("Episode Rewards")
+    reward_moving_average = get_moving_avgs(rewards, rolling_length, "valid")
+    axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+    axs[0].set_xlabel("Episodes")
+    axs[0].set_ylabel("Reward")
+    
+    # Gráfico de longitudes
+    axs[1].set_title("Episode Lengths")
+    length_moving_average = get_moving_avgs(lengths, rolling_length, "valid")
+    axs[1].plot(range(len(length_moving_average)), length_moving_average)
+    axs[1].set_xlabel("Episodes")
+    axs[1].set_ylabel("Length")
+    
+    plt.tight_layout()
+    plt.show()
+
+def plot_comparative_results(rewards1, lengths1, rewards2, lengths2, 
+                             label1="Algoritmo 1", label2="Algoritmo 2",
+                             rolling_length=50):
+    """
+    Compara las curvas de recompensas y longitudes de episodios de dos métodos.
+
+    Parámetros:
+    -----------
+    rewards1 : list
+        Recompensas por episodio del primer método.
+    lengths1 : list
+        Longitudes de episodio del primer método.
+    rewards2 : list
+        Recompensas por episodio del segundo método.
+    lengths2 : list
+        Longitudes de episodio del segundo método.
+    label1 : str, opcional
+        Etiqueta para el primer método (por defecto "Algoritmo 1").
+    label2 : str, opcional
+        Etiqueta para el segundo método (por defecto "Algoritmo 2").
+    rolling_length : int, opcional
+        Tamaño de la ventana para calcular la media móvil (por defecto 50).
+    """
+    # Calcular medias móviles para las recompensas
+    moving_avg_rewards1 = get_moving_avgs(rewards1, rolling_length)
+    moving_avg_rewards2 = get_moving_avgs(rewards2, rolling_length)
+    
+    # Calcular medias móviles para las longitudes
+    moving_avg_lengths1 = get_moving_avgs(lengths1, rolling_length)
+    moving_avg_lengths2 = get_moving_avgs(lengths2, rolling_length)
+    
+    # Crear figura con dos subplots
+    fig, axs = plt.subplots(ncols=2, figsize=(14, 5))
+    
+    # Subplot para recompensas
+    axs[0].plot(range(len(moving_avg_rewards1)), moving_avg_rewards1, 
+                label=label1, linestyle="-", color="blue")
+    axs[0].plot(range(len(moving_avg_rewards2)), moving_avg_rewards2, 
+                label=label2, linestyle="--", color="red")
+    axs[0].set_title("Comparación de Recompensas")
+    axs[0].set_xlabel("Episodios")
+    axs[0].set_ylabel("Recompensa")
+    axs[0].legend()
+    axs[0].grid(True)
+    
+    # Subplot para longitudes de episodios
+    axs[1].plot(range(len(moving_avg_lengths1)), moving_avg_lengths1, 
+                label=label1, linestyle="-", color="blue")
+    axs[1].plot(range(len(moving_avg_lengths2)), moving_avg_lengths2, 
+                label=label2, linestyle="--", color="red")
+    axs[1].set_title("Comparación de Longitudes de Episodios")
+    axs[1].set_xlabel("Episodios")
+    axs[1].set_ylabel("Longitud")
+    axs[1].legend()
+    axs[1].grid(True)
+    
     plt.tight_layout()
     plt.show()
